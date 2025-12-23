@@ -15,7 +15,7 @@ def draw_blueprint(rooms, filename):
             insert=(x,y),
             size=(w,h),
             fill="none",
-            stokes="black",
+            stroke="black",
             stroke_width = 2
         ))
 
