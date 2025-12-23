@@ -1,6 +1,52 @@
 import svgwrite
 
 scale = 20
+door_size = 3
+
+def overlap(a, alen, b, blen):
+    return max(a,b) < min(a + alen, b + blen)
+
+def rooms_touch(r1, r2):
+    #right-left
+    if r1["x"] + r1["w"] == r2["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
+        return "right"
+    if r2["x"] + r2["w"] == r1["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
+        return "left"
+    
+    #top-bot
+    if r1["y"] + r1["h"] == r2["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
+        return "bottom"
+    if r2["y"] + r2["h"] == r1["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
+        return "top"
+
+    return None
+
+def draw_door(dwg, x, y, w, h, side):
+    if side == "right":
+        dwg.add(dwg.rect(
+            insert=(x + w - 1, y + h / 2 - door_size * scale / 2),
+            size=(2, door_size * scale),
+            fill="white"
+        ))
+    elif side == "left":
+        dwg.add(dwg.rect(
+            insert=(x, y + h / 2 - door_size * scale / 2),
+            size=(2, door_size * scale),
+            fill="white"
+        ))
+    elif side == "bottom":
+        dwg.add(dwg.rect(
+            insert=(x + w / 2 - door_size * scale / 2, y + h - 1),
+            size=(door_size * scale, 2),
+            fill="white"
+        ))
+    elif side == "top":
+        dwg.add(dwg.rect(
+            insert=(x + w / 2 - door_size * scale / 2, y),
+            size=(door_size * scale, 2),
+            fill="white"
+        ))
+    
 
 def draw_blueprint(rooms, filename):
     dwg = svgwrite.Drawing(filename)
@@ -35,27 +81,33 @@ def draw_blueprint(rooms, filename):
             room["name"],
             insert=((x + w) / 2, (y + h) / 2),
             text_anchor = "middle",
-            alignment_baseline = "middle",
+            alignment_baseline = "middle",  
             font_size = 14
         ))
 
-    #door example
-    door_width = 3
-    doors = []
-    for room in rooms:
-        if room["y"] == 0: #bottom wall
-            doors.append({
-                "x": (room["x"] + room["w"]) / 2 - door_width/ 2,
-                "y": 0,
-                "w": door_width,
-                "h": 0
-            })
+    #auto interior doors
+    for i in range(len(rooms)):
+        for j in range(i + 1, len(rooms)):
+            side = rooms_touch(rooms[i], rooms[j])
+            if side:
+                r = rooms[i]
+                draw_door(
+                    dwg,
+                    r["x"] * scale,
+                    r["y"] * scale,
+                    r["w"] * scale,
+                    r["h"] * scale,
+                    side
+                )
 
-    for door in doors:
-        dwg.add(dwg.rect(
-            insert=(door["x"] * scale, door["y"] * scale),
-            size=(door["w"] * scale, 2),
-            fill="white",
-            stroke="none"
-        ))  
+    #main exterior entrance
+    entrance_room = max(rooms, key=lambda r: r["w"] * r["h"])
+    draw_door(
+        dwg,
+        entrance_room["x"] * scale,
+        entrance_room["y"] * scale,
+        entrance_room["w"] * scale,
+        entrance_room["h"] * scale,
+        "bottom"
+    )
     dwg.save()
