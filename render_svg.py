@@ -1,59 +1,42 @@
 import svgwrite
 
 scale = 20
-door_size = 3
+door_size = 5
 
-def overlap(a, alen, b, blen):
-    return max(a,b) < min(a + alen, b + blen)
-
-def rooms_touch(r1, r2):
-    #right-left
-    if r1["x"] + r1["w"] == r2["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
-        return "right"
-    if r2["x"] + r2["w"] == r1["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
-        return "left"
-    
-    #top-bot
-    if r1["y"] + r1["h"] == r2["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
-        return "bottom"
-    if r2["y"] + r2["h"] == r1["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
-        return "top"
-
-    return None
-
-def draw_door(dwg, x, y, w, h, side):
+def draw_door(dwg, x, y, w, h, side, color="brown"):
     if side == "right":
         dwg.add(dwg.rect(
             insert=(x + w - 1, y + h / 2 - door_size * scale / 2),
             size=(2, door_size * scale),
-            fill="white"
+            fill=color
         ))
     elif side == "left":
         dwg.add(dwg.rect(
             insert=(x, y + h / 2 - door_size * scale / 2),
             size=(2, door_size * scale),
-            fill="white"
+            fill=color
         ))
     elif side == "bottom":
         dwg.add(dwg.rect(
             insert=(x + w / 2 - door_size * scale / 2, y + h - 1),
             size=(door_size * scale, 2),
-            fill="white"
+            fill=color
         ))
     elif side == "top":
         dwg.add(dwg.rect(
             insert=(x + w / 2 - door_size * scale / 2, y),
             size=(door_size * scale, 2),
-            fill="white"
+            fill=color
         ))
     
 
 def draw_blueprint(rooms, filename):
-    dwg = svgwrite.Drawing(filename)
 
     #compute building boundaries for rooms later
     max_x = max(room["x"] + room["w"] for room in rooms)
     max_y = max(room["y"] + room["h"] for room in rooms)
+
+    dwg = svgwrite.Drawing(filename, size=(max_x * scale + 10, max_y * scale + 10))
 
     dwg.add(dwg.rect(
         insert=(0,0),
@@ -72,18 +55,35 @@ def draw_blueprint(rooms, filename):
         dwg.add(dwg.rect(
             insert=(x,y),
             size=(w,h),
-            fill="none",
+            fill="lightblue",
             stroke="black",
             stroke_width = 2
         ))
 
         dwg.add(dwg.text(
             room["name"],
-            insert=((x + w) / 2, (y + h) / 2),
+            insert=(x + w / 2, y + h / 2),
             text_anchor = "middle",
             alignment_baseline = "middle",  
             font_size = 14
         ))
+
+    def overlap(a, alen, b, blen):
+        return max(a,b) < min(a + alen, b + blen)
+
+    def rooms_touch(r1, r2):
+        #right-left
+        if r1["x"] + r1["w"] == r2["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
+            return "right"
+        if r2["x"] + r2["w"] == r1["x"] and overlap(r1["y"], r1["h"], r2["y"], r2["h"]):
+            return "left"
+        
+        #top-bot
+        if r1["y"] + r1["h"] == r2["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
+            return "bottom"
+        if r2["y"] + r2["h"] == r1["y"] and overlap(r1["x"], r1["w"], r2["x"], r2["w"]):
+            return "top"
+        return None
 
     #auto interior doors
     for i in range(len(rooms)):
