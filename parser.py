@@ -24,6 +24,8 @@ def parse_text(text):
     match = re.search(r'(\d+)\s*bathroom', text)
     if match:
         spec["bathroom"] = int(match.group(1))
-    elif "bathroom" or "Bathroom" in text:
+
+    elif "bathroom" in text:
         spec["bathroom"] = 1
+
     return spec

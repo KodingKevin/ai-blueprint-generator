@@ -6,20 +6,31 @@ def generate_layout(requirements):
     rooms = []
 
     #dining room
-    dining = {"name": "Dining", "x" : 0, "y" : 0, "w" : 30, "h" :  20}
+    dining = {
+        "name": "Dining", 
+        "type": "dining",
+        "is_entrance": True,
+        "entrance_side": "top",
+        "x" : 0, 
+        "y" : 0, 
+        "w" : 30, 
+        "h" :  20,
+        "connects_to": ["kitchen", "bathroom"],
+        "preferred_sides": ["right", "bottom", "left", "top"]
+        }
     rooms.append(dining)
-
-    current_x = dining["w"]
-    current_y = 0
 
     #kitchen
     if requirements.get("kitchen", 0) > 0:
         kitchen = {
             "name": "Kitchen", 
+            "type": "kitchen",
             "x" : dining["x"] + dining["w"], 
             "y" : 0, 
             "w": 15, 
-            "h" : 20
+            "h" : 20,
+            "connects_to": ["dining"],
+            "preferred_sides": ["left", "top", "bottom", "right"]
         }
         rooms.append(kitchen)
 
@@ -29,10 +40,13 @@ def generate_layout(requirements):
     for i in range(requirements.get("bathroom", 0)):
         bathroom = {
             "name" : f"Bathroom {i + 1}", 
+            "type": "bathroom",
             "x" : bath_x, 
             "y" : bath_y, 
             "w": 10, 
-            "h": 8
+            "h": 8,
+            "connects_to": ["dining"],
+            "preferred_sides": ["top"]
         }
         rooms.append(bathroom)
         bath_x += bathroom["w"]
