@@ -28,75 +28,38 @@ def should_connect(a, b):
         a["type"] in b.get("connects_to", [])
     )
 
-def draw_door(dwg, x, y, w, h, side, color="brown"):
+def draw_door(dwg, x, y, w, h, side, center_override=None):
+    #all in pixels
+    door_len = door_size * scale
     if side == "right":
+        center_y = center_override if center_override is not None else(y + h / 2)
         dwg.add(dwg.rect(
-            insert=(x + w - 1, y + h / 2 - door_size * scale / 2),
-            size=(2, door_size * scale),
-            fill=color
+            insert=(x + w - 1, center_y - door_len / 2),
+            size=(2, door_len),
+            fill="white",
+            stroke="none"
         ))
     elif side == "left":
+        center_y = center_override if center_override is not None else(y + h / 2)
         dwg.add(dwg.rect(
-            insert=(x, y + h / 2 - door_size * scale / 2),
-            size=(2, door_size * scale),
-            fill=color
+            insert=(x, center_y / 2),
+            size=(2, door_len),
+            fill="white",
+            stroke="none"
         ))
     elif side == "bottom":
+        center_x = center_override if center_override is not None else(x + w / 2)
         dwg.add(dwg.rect(
-            insert=(x + w / 2 - door_size * scale / 2, y + h - 1),
-            size=(door_size * scale, 2),
-            fill=color
+            insert=(center_x - door_len / 2, y + h - 1),
+            size=(door_len, 2),
+            fill="white",
+            stroke="none"
         ))
     elif side == "top":
+        center_x = center_override if center_override is not None else(x + w / 2)
         dwg.add(dwg.rect(
-            insert=(x + w / 2 - door_size * scale / 2, y),
-            size=(door_size * scale, 2),
-            fill=color
-        ))
-    
-def choose_door_side(room, valid_sides, door_perferred=None):
-    prefs = door_perferred or room.get("preferred_sides", [])
-    for side in prefs:
-        if side in valid_sides:
-            return side
-    return valid_sides[0] if valid_sides else None
-
-def draw_door_px(dwg, x_px, y_px, w_px, h_px, side, center_override_px=None):
-    """Draw a door gap on a rectangle given in PIXELS."""
-    door_len_px = door_size * scale
-
-    if side == "right":
-        cy = center_override_px if center_override_px is not None else (y_px + h_px / 2)
-        dwg.add(dwg.rect(
-            insert=(x_px + w_px - 1, cy - door_len_px / 2),
-            size=(2, door_len_px),
-            fill="white",
-            stroke="none"
-        ))
-
-    elif side == "left":
-        cy = center_override_px if center_override_px is not None else (y_px + h_px / 2)
-        dwg.add(dwg.rect(
-        insert=(x_px, cy - door_len_px / 2),
-            size=(2, door_len_px),
-            fill="white",
-            stroke="none"
-        ))
-
-    elif side == "bottom":
-        cx = center_override_px if center_override_px is not None else (x_px + w_px / 2)
-        dwg.add(dwg.rect(
-            insert=(cx - door_len_px / 2, y_px + h_px - 1),
-            size=(door_len_px, 2),
-            fill="white",
-            stroke="none"
-        ))
-
-    elif side == "top":
-        cx = center_override_px if center_override_px is not None else (x_px + w_px / 2)
-        dwg.add(dwg.rect(
-            insert=(cx - door_len_px / 2, y_px),
-            size=(door_len_px, 2),
+            insert=(center_x - door_len / 2, y),
+            size=(door_len, 2),
             fill="white",
             stroke="none"
         ))
@@ -112,19 +75,21 @@ def draw_shared_door(dwg, r1, r2, side):
     w_px = r1["w"] * scale
     h_px = r1["h"] * scale
 
+    if side in ("top", "bottom"):
+        overlap_start = max(r1["x"], r2["x"])
+        overlap_end = min(r1["x"] + r1["w"], r2["x"] + r2["w"])
+        center_x_units = (overlap_start + overlap_end) / 2
+        center_x_px = center_x_units * scale
+        draw_door(dwg, x_px, y_px, w_px, h_px, side, center_override=center_x_px)
+
     if side in ("left", "right"):
         overlap_start = max(r1["y"], r2["y"])
         overlap_end = min(r1["y"] + r1["h"], r2["y"] + r2["h"])
-        center_y = ((overlap_start + overlap_end) / 2) * scale  
-        draw_door(dwg, x_px, y_px + center_y - (y_px + h_px/2), w_px, h_px, side)
+        center_y_units = (overlap_start + overlap_end) / 2
+        center_y_px = center_y_units * scale
+        draw_door(dwg, x_px, y_px, w_px, h_px, side, center_override=center_y_px)
 
-    else:
-        overlap_start = max(r1["x"], r2["x"])
-        overlap_end = min(r1["x"] + r1["w"], r2["x"] + r2["w"])
-        center_x = ((overlap_start + overlap_end) / 2) * scale
-        draw_door(dwg, x_px + center_x - (x_px + w_px/2), y_px, w_px, h_px, side)
-
-def pick_side(room, max_x, max_y):
+def exterior_side(room, max_x, max_y):
     if room["y"] == 0:
         return "bottom"
     if room["x"] == 0:
@@ -143,7 +108,22 @@ def entrance_room(rooms):
     for r in rooms:
         if r["type"] == "dining":
             return r
-    return None
+    return max(rooms, key=lambda r: r["w"] * r["h"])
+
+def pick_entrance_side(room, max_x, max_y):
+    outside = exterior_side(room, max_x, max_y)
+    if not outside:
+        return None
+
+    preferred = room.get("entrance_side")
+    if preferred in outside:
+        return preferred
+
+    # fallback preference order
+    for s in ["bottom", "left", "right", "top"]:
+        if s in outside:
+            return s
+    return outside[0]
 
 def draw_blueprint(rooms, filename):
     #compute building boundaries for rooms later
@@ -152,6 +132,7 @@ def draw_blueprint(rooms, filename):
 
     dwg = svgwrite.Drawing(filename, size=(max_x * scale + 10, max_y * scale + 10))
 
+    #outer wall
     dwg.add(dwg.rect(
         insert=(0,0),
         size=(max_x * scale, max_y * scale),
@@ -188,28 +169,20 @@ def draw_blueprint(rooms, filename):
         for j in range(i + 1, len(rooms)):
             a, b = rooms[i], rooms[j]
             if not should_connect(a, b):
-                continue  # prevents Bathroom1 <-> Bathroom2 door
-
-            sides = rooms_touch(a, b)
-            for side in sides:
-                key = (i, j, side)
-                if key in drawn_pairs:
-                    continue
+                continue
+            for side in rooms_touch(a, b):
                 draw_shared_door(dwg, a, b, side)
-                drawn_pairs.add(key)
 
     #main exterior entrance
     entry = entrance_room(rooms)
-    if entry:
-        side = pick_side(entry, max_x, max_y)
-        if side:
-            draw_door(
-                dwg,
-                entry["x"] * scale,
-                entry["y"] * scale,
-                entry["w"] * scale,
-                entry["h"] * scale,
-                side
-            )
-
+    side = exterior_side(entry, max_x, max_y)
+    if side:
+        draw_door(
+            dwg,
+            entry["x"] * scale,
+            entry["y"] * scale,
+            entry["w"] * scale,
+            entry["h"] * scale,
+            side
+        )
     dwg.save()
