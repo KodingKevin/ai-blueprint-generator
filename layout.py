@@ -1,54 +1,147 @@
-def generate_layout(requirements):
+from constraints import no_overlap
+
+def attach(room_to_place, anchor, side):
+    """    
+    Compute the (x, y) position of `room_to_place` when it is
+    attached to the given `anchor` room on a specific side.
+    Sides are relative to the anchor room:
+        - right: room is placed to the right of anchor
+        - left:  room is placed to the left of anchor
+        - bottom: room is placed below anchor
+        - top:    room is placed above anchor
     """
-    Generate room positions based on parsed requirements.
-    Each room is a dict: {"name","x","y","w","h"}
+    if side == "right":
+        return anchor["x"] + anchor["w"], anchor["y"]
+    if side == "left":
+        return anchor["x"] - room_to_place["w"], anchor["y"]
+    if side == "bottom":
+        return anchor["x"], anchor["y"] + anchor["h"]
+    if side == "top":
+        return anchor["x"], anchor["y"] - room_to_place["h"]
+    raise ValueError("bad side")
+
+def bbox(rooms):
     """
-    rooms = []
+    Compute the bounding box of a list of rooms.
 
-    #dining room
-    dining = {
-        "name": "Dining", 
-        "type": "dining",
-        "is_entrance": True,
-        "entrance_side": "top",
-        "x" : 0, 
-        "y" : 0, 
-        "w" : 30, 
-        "h" :  20,
-        "connects_to": ["kitchen", "bathroom"],
-        "preferred_sides": ["right", "bottom", "left", "top"]
-        }
-    rooms.append(dining)
+    Used for:
+    - determining overall building size
+    - fallback placement
+    - normalization to positive coordinates
+    """
+    min_x = min(r["x"] for r in rooms)
+    min_y = min(r["y"] for r in rooms)
+    max_x = max(r["x"] + r["w"] for r in rooms)
+    max_y = max(r["y"] + r["h"] for r in rooms)
+    return min_x, min_y, max_x, max_y
 
-    #kitchen
-    if requirements.get("kitchen", 0) > 0:
-        kitchen = {
-            "name": "Kitchen", 
-            "type": "kitchen",
-            "x" : dining["x"] + dining["w"], 
-            "y" : 0, 
-            "w": 15, 
-            "h" : 20,
-            "connects_to": ["dining"],
-            "preferred_sides": ["left", "top", "bottom", "right"]
-        }
-        rooms.append(kitchen)
+def normalize_to_origin(rooms):
+    """
+    Shift all rooms so that the minimum x and y coordinates
+    are at (0,0).
 
-    #bathroom
-    bath_x = 0
-    bath_y = dining["h"]
-    for i in range(requirements.get("bathroom", 0)):
-        bathroom = {
-            "name" : f"Bathroom {i + 1}", 
-            "type": "bathroom",
-            "x" : bath_x, 
-            "y" : bath_y, 
-            "w": 10, 
-            "h": 8,
-            "connects_to": ["dining"],
-            "preferred_sides": ["top"]
-        }
-        rooms.append(bathroom)
-        bath_x += bathroom["w"]
-    
-    return rooms
+    This prevents negative coordinates caused by placing rooms
+    to the left or above the initial anchor room.
+
+    use to clean the svg
+    """
+    min_x, min_y, _, _ = bbox(rooms)
+    if min_x != 0 or min_y != 0:
+        for r in rooms:
+            r["x"] -= min_x
+            r["y"] -= min_y
+
+def find_anchor_candidates(placed_rooms, room):
+    """
+    Determine which already-placed rooms are valid anchors
+    for placing the given room.
+
+    Priority:
+    1. Rooms whose type appears in room["connects_to"]
+    2. Rooms that want to connect to this room's type
+    3. Fallback: ANY placed room (to guarantee placement)
+    """
+    wants = set(room.get("connects_to", []))
+    # anchors are rooms whose type is in wants OR that want to connect to this room type
+    candidates = []
+    for a in placed_rooms:
+        if a["type"] in wants or room["type"] in a.get("connects_to", []):
+            candidates.append(a)
+    return candidates if candidates else placed_rooms
+
+def try_place_adjacent(placed_rooms, room):
+    """
+    Attempt to place `room` adjacent to one of the already
+    placed rooms that it should connect to.
+
+    Placement strategy:
+    - Iterate through anchor candidates
+    - Try each preferred side (in order)
+    - Accept the first placement that causes NO overlap
+    """
+    anchors = find_anchor_candidates(placed_rooms, room)
+    sides = room.get("preferred_sides", ["right", "bottom", "left", "top"])
+
+    for anchor in anchors:
+        for side in sides:
+            # Create a temporary candidate placement
+            test = dict(room)
+            test["x"], test["y"] = attach(test, anchor, side)
+
+            # temporarily test overlap
+            candidate = placed_rooms + [test]
+            if no_overlap(candidate):
+                room["x"], room["y"] = test["x"], test["y"]
+                return True
+
+    return False
+
+def fallback_pack(placed_rooms, room, gap=0):
+    """
+    Fallback placement method when adjacency placement fails.
+
+    Strategy:
+    1. Place room to the right of the current bounding box
+    2. If that overlaps, place it below the bounding box
+    """
+    _, _, max_x, min_y = bbox(placed_rooms)
+    room["x"] = max_x + gap
+    room["y"] = min_y
+
+    # if overlap anyway, move down by bbox height (rare with this method)
+    if not no_overlap(placed_rooms + [room]):
+        min_x, min_y, max_x, max_y = bbox(placed_rooms)
+        room["x"] = min_x
+        room["y"] = max_y + gap
+
+def generate_layout(requirements, template_rooms):
+    """
+    Main layout generator.
+
+    Inputs:
+        requirements   - parsed user input (currently unused here,
+                         but reserved for future scaling/logic)
+        template_rooms - list of room dicts from templates.py
+    """
+    # copy & init positions
+    rooms = [dict(r) for r in template_rooms]
+    for r in rooms:
+        r.setdefault("x", 0)
+        r.setdefault("y", 0)
+
+    placed = []
+
+    # Place first room at origin
+    rooms[0]["x"], rooms[0]["y"] = 0, 0
+    placed.append(rooms[0])
+
+    # Place the rest
+    for room in rooms[1:]:
+        ok = try_place_adjacent(placed, room)
+        if not ok:
+            fallback_pack(placed, room, gap=0)
+        placed.append(room)
+
+    # Ensure everything is in positive coords
+    normalize_to_origin(placed)
+    return placed
