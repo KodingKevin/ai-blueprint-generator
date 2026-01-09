@@ -8,6 +8,7 @@ def restaurant_template(requirements):
     rooms.append({
         "name": "Dining",
         "type": "dining",
+        "zone": "public",
         "w": 30, "h": 20,
         "is_entrance": True,
         "entrance_side": "top",
@@ -19,6 +20,7 @@ def restaurant_template(requirements):
         rooms.append({
             "name": "Kitchen",
             "type": "kitchen",
+            "zone": "service",
             "w": 15, "h": 20,
             "connects_to": ["dining"],
             "preferred_sides": ["left", "top", "bottom", "right"],
@@ -28,6 +30,7 @@ def restaurant_template(requirements):
         rooms.append({
             "name": f"Bathroom {i+1}",
             "type": "bathroom",
+            "zone": "public",
             "w": 10, "h": 8,
             "connects_to": ["dining"],
             "preferred_sides": ["top", "left", "right", "bottom"],
@@ -43,6 +46,7 @@ def house_template(requirements):
     rooms.append({
         "name": "Living",
         "type": "living",
+        "zone": "public",
         "w": 24, "h": 18,
         "is_entrance": True,
         "entrance_side": "bottom",   # common “front door” at bottom in your drawings
@@ -53,15 +57,26 @@ def house_template(requirements):
     rooms.append({
         "name": "Kitchen",
         "type": "kitchen",
+        "zone": "service",
         "w": 16, "h": 12,
         "connects_to": ["living", "dining"],
         "preferred_sides": ["left", "top", "right", "bottom"],
+    })
+
+    rooms.append({
+        "name": "Dining",
+        "type": "dining",
+        "zone": "public",
+        "w": 14, "h": 12,
+        "connects_to": ["kitchen", "living"],
+        "preferred_sides": ["left", "bottom", "top", "right"],
     })
 
     # Simple hallway to connect private rooms (v1 house needs this or layouts get awkward)
     rooms.append({
         "name": "Hall",
         "type": "hall",
+        "zone": "circulation",
         "w": 6, "h": 18,
         "connects_to": ["living", "bedroom", "bathroom"],
         "preferred_sides": ["top", "right", "left", "bottom"],
@@ -71,6 +86,7 @@ def house_template(requirements):
         rooms.append({
             "name" : f"Bedroom {i+1}",
             "type" : "bedroom",
+            "zone" : "private",
             "w" : 14, "h" : 12,
             "connects_to" : ["hall"],
             "preferred_sides": ["left", "right", "top", "bottom"],
@@ -80,6 +96,7 @@ def house_template(requirements):
         rooms.append({
             "name": f"Bathroom {i+1}",
             "type": "bathroom",
+            "zone": "private",
             "w": 10, "h": 8,
             "connects_to": ["hall"],
             "preferred_sides": ["top", "left", "right", "bottom"],

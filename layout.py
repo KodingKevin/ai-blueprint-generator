@@ -20,6 +20,36 @@ def attach(room_to_place, anchor, side):
         return anchor["x"], anchor["y"] - room_to_place["h"]
     raise ValueError("bad side")
 
+def generate_attach_pos(room, anchor, side, step="2"):
+    """
+    Yield multiple (x,y) candidate placements by attaching room to `anchor`
+    on a given side, then SLIDING along the shared wall.
+    """
+    r_w, r_h = room["w"], room["h"]
+    anchor_x, anchor_y, anchor_w, anchor_h = anchor["x"], anchor["y"], anchor["w"], anchor["h"]
+
+    if side == "right":
+        x = anchor_x + anchor_w
+        #slide y from top to bottom of anchor span
+        for y in range(anchor_y - r_h + 1, anchor_y + anchor_h, step):
+            yield x, y
+    
+    elif side == "left":
+        x = anchor_x - r_w
+        for y in range(anchor_y - r_h + 1, anchor_y + anchor_h, step):
+            yield x, y
+
+    elif side == "bottom":
+        y = anchor_y + anchor_h
+        #slide x across anchor span
+        for x in range(anchor_x - r_w + 1, anchor_x + anchor_w, step):
+            yield x, y
+
+    elif side == "top":
+        y = anchor_y - r_h
+        for x in range(anchor_x - r_w + 1, anchor_x + anchor_w, step):
+            yield x, y
+    
 def bbox(rooms):
     """
     Compute the bounding box of a list of rooms.
@@ -53,8 +83,8 @@ def normalize_to_origin(rooms):
 
 def find_anchor_candidates(placed_rooms, room):
     """
-    Determine which already-placed rooms are valid anchors
-    for placing the given room.
+    Choose anchors that should connect AND prefer same-zone anchors first.
+    Zones reduce "random looking" placements (public stays with public, etc).
 
     Priority:
     1. Rooms whose type appears in room["connects_to"]
@@ -62,12 +92,31 @@ def find_anchor_candidates(placed_rooms, room):
     3. Fallback: ANY placed room (to guarantee placement)
     """
     wants = set(room.get("connects_to", []))
+    room_zone = room.get("zone", None)
+
+    same_zone = []
+    cross_zone = []
+
     # anchors are rooms whose type is in wants OR that want to connect to this room type
-    candidates = []
     for a in placed_rooms:
-        if a["type"] in wants or room["type"] in a.get("connects_to", []):
-            candidates.append(a)
-    return candidates if candidates else placed_rooms
+        connects = (
+            a["type"] in wants or
+            room["type"] in a.get("connects_to", [])
+        )
+        if not connects:
+            continue
+
+        a_zone = a.get("zone", None)
+        if room_zone is not None and a_zone == room_zone:
+            same_zone.append(a)
+        else:
+            cross_zone.append(a)
+
+    if same_zone:
+        return same_zone
+    if cross_zone:
+        return cross_zone
+    return placed_rooms
 
 def try_place_adjacent(placed_rooms, room):
     """
@@ -84,15 +133,13 @@ def try_place_adjacent(placed_rooms, room):
 
     for anchor in anchors:
         for side in sides:
-            # Create a temporary candidate placement
-            test = dict(room)
-            test["x"], test["y"] = attach(test, anchor, side)
+            for cx, cy in generate_attach_pos(room, anchor, side, step=2):
+                test = dict(room)
+                test["x"], test["y"] = cx, cy
 
-            # temporarily test overlap
-            candidate = placed_rooms + [test]
-            if no_overlap(candidate):
-                room["x"], room["y"] = test["x"], test["y"]
-                return True
+                if no_overlap(placed_rooms + [test]):
+                    room["x"], room["y"] = cx, cy
+                    return True
 
     return False
 
