@@ -1,6 +1,19 @@
 from constraints import no_overlap
 import random
 
+def touches(a, b):
+    # axis-aligned rectangle touch check (shared edge overlap)
+    # right/left
+    if a["x"] + a["w"] == b["x"] or b["x"] + b["w"] == a["x"]:
+        return overlap_1d(a["y"], a["h"], b["y"], b["h"])
+    # top/bottom
+    if a["y"] + a["h"] == b["y"] or b["y"] + b["h"] == a["y"]:
+        return overlap_1d(a["x"], a["w"], b["x"], b["w"])
+    return False
+
+def overlap_1d(a, alen, b, blen):
+    return max(a, b) < min(a + alen, b + blen)
+    
 def attach(room_to_place, anchor, side):
     """    
     Compute the (x, y) position of `room_to_place` when it is
@@ -41,7 +54,7 @@ def anchor_priority(anchor, room):
     candidates.sort(key=lambda a: anchor_priority(a, room))
     return candidates
 
-def generate_attach_pos(room, anchor, side, step="2"):
+def generate_attach_pos(room, anchor, side, step=2):
     """
     Yield multiple (x,y) candidate placements by attaching room to `anchor`
     on a given side, then SLIDING along the shared wall.
@@ -165,25 +178,47 @@ def layout_compactness_score(rooms):
     area = (max_x - min_x) * (max_y - min_y)
     return -area  # bigger negative is worse; closer to 0 is better
 
+def type_pair(a, b):
+    return tuple(sorted((a["type"], b["type"])))
+
+def layout_type_adjacency_score(rooms):
+    """
+    Reward/punish specific room-type adjacencies.
+    Uses `touches()`.
+    """
+    reward = {
+        ("kitchen", "dining"): 30,
+        ("living", "dining"): 18,
+        ("kitchen", "living"): 18,   # encourages open concept / proximity
+        ("hall", "bedroom"): 20,
+        ("hall", "bathroom"): 20,
+    }
+
+    penalty = {
+        ("bedroom", "kitchen"): 40,
+        ("bedroom", "dining"): 25,
+        ("bedroom", "living"): 25,
+        ("bathroom", "kitchen"): 20,  # optional (some homes allow, but usually not ideal)
+    }
+
+    score = 0
+    for i in range(len(rooms)):
+        for j in range(i + 1, len(rooms)):
+            a, b = rooms[i], rooms[j]
+            if not touches(a, b):
+                continue
+
+            pair = type_pair(a, b)
+            score += reward.get(pair, 0)
+            score -= penalty.get(pair, 0)
+
+    return score
 
 def layout_zone_adjacency_score(rooms):
     """
     Reward desirable zone relationships and penalize bad ones.
     v1 approximation: use bounding box touching (shared wall) as adjacency.
     """
-    def touches(a, b):
-        # axis-aligned rectangle touch check (shared edge overlap)
-        # right/left
-        if a["x"] + a["w"] == b["x"] or b["x"] + b["w"] == a["x"]:
-            return overlap_1d(a["y"], a["h"], b["y"], b["h"])
-        # top/bottom
-        if a["y"] + a["h"] == b["y"] or b["y"] + b["h"] == a["y"]:
-            return overlap_1d(a["x"], a["w"], b["x"], b["w"])
-        return False
-
-    def overlap_1d(a, alen, b, blen):
-        return max(a, b) < min(a + alen, b + blen)
-
     score = 0
     for i in range(len(rooms)):
         for j in range(i + 1, len(rooms)):
@@ -214,6 +249,7 @@ def score_layout(rooms):
     """
     return (
         layout_zone_adjacency_score(rooms)
+        + layout_type_adjacency_score(rooms)
         + layout_compactness_score(rooms)
     )
 
@@ -234,6 +270,27 @@ def fallback_pack(placed_rooms, room, gap=0):
         min_x, min_y, max_x, max_y = bbox(placed_rooms)
         room["x"] = min_x
         room["y"] = max_y + gap
+
+def normalize_and_trim_corridors(rooms, corridor_width=4, pad=1):
+    for hall in rooms:
+        if hall.get("zone") != "circulation":
+            continue
+
+        # shrink width (keep centered)
+        center_x = hall["x"] + hall["w"] / 2
+        hall["w"] = corridor_width
+        hall["x"] = center_x - corridor_width / 2
+
+        # find touching neighbors
+        neighbors = [r for r in rooms if r is not hall and touches(hall, r)]
+        if not neighbors:
+            continue
+
+        min_y = min(r["y"] for r in neighbors) - pad
+        max_y = max(r["y"] + r["h"] for r in neighbors) + pad
+
+        hall["y"] = min_y
+        hall["h"] = max_y - min_y
 
 def generate_layout(requirements, template_rooms, attempts=20):
     best_rooms = None
@@ -256,6 +313,8 @@ def generate_layout(requirements, template_rooms, attempts=20):
             placed.append(room)
 
         normalize_to_origin(placed)
+        normalize_and_trim_corridors(placed, corridor_width=4, pad=1)
+        normalize_to_origin(placed) #safety net
 
         s = score_layout(placed)
         if best_score is None or s > best_score:
