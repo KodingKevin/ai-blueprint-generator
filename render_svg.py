@@ -92,13 +92,33 @@ def door_opening_on_shared_wall(r1, r2, side):
     """
     min_overlap_units = door_size + 2
 
+    # Detect if one room is a corridor/hall
+    corridor = None
+    other = None
+    if r1.get("zone") == "circulation":
+        corridor, other = r1, r2
+    elif r2.get("zone") == "circulation":
+        corridor, other = r2, r1
+
+    # --------------------------
+    # Vertical shared wall (left/right)
+    # --------------------------
     if side in ("left", "right"):
         overlap_start = max(r1["y"], r2["y"])
-        overlap_end = min(r1["y"] + r1["h"], r2["y"] + r2["h"])
+        overlap_end   = min(r1["y"] + r1["h"], r2["y"] + r2["h"])
         if overlap_end - overlap_start < min_overlap_units:
             return None
 
-        center = (overlap_start + overlap_end) / 2
+        # Choose door center:
+        # - If corridor exists, align to corridor centerline (Y)
+        # - Otherwise, use overlap center (old behavior)
+        if corridor is not None:
+            center = corridor["y"] + corridor["h"] / 2
+            # Clamp center into overlap so the door stays on the shared segment
+            center = max(overlap_start + door_size / 2, min(center, overlap_end - door_size / 2))
+        else:
+            center = (overlap_start + overlap_end) / 2
+
         y1 = center - door_size / 2
         y2 = center + door_size / 2
 
@@ -106,13 +126,24 @@ def door_opening_on_shared_wall(r1, r2, side):
         x = r1["x"] if side == "left" else (r1["x"] + r1["w"])
         return ("v", x, y1, y2)
 
+    # --------------------------
+    # Horizontal shared wall (top/bottom)
+    # --------------------------
     if side in ("top", "bottom"):
         overlap_start = max(r1["x"], r2["x"])
-        overlap_end = min(r1["x"] + r1["w"], r2["x"] + r2["w"])
+        overlap_end   = min(r1["x"] + r1["w"], r2["x"] + r2["w"])
         if overlap_end - overlap_start < min_overlap_units:
             return None
 
-        center = (overlap_start + overlap_end) / 2
+        # Choose door center:
+        # - If corridor exists, align to corridor centerline (X)
+        # - Otherwise, use overlap center
+        if corridor is not None:
+            center = corridor["x"] + corridor["w"] / 2
+            center = max(overlap_start + door_size / 2, min(center, overlap_end - door_size / 2))
+        else:
+            center = (overlap_start + overlap_end) / 2
+
         x1 = center - door_size / 2
         x2 = center + door_size / 2
 
@@ -239,6 +270,42 @@ def draw_exterior_door(dwg, x, y, w, h, side):
         draw_door(dwg, x - offset, y, w, h, side)
     elif side == "right":
         draw_door(dwg, x + offset, y, w, h, side)
+
+def exterior_door_opening(room, side, max_x, max_y):
+    """
+    Return a door opening on the BUILDING EXTERIOR wall (in ROOM UNITS),
+    only if the room actually touches that exterior side.
+    """
+    # Verify it's truly on the exterior
+    if side == "top" and room["y"] != 0:
+        return None
+    if side == "bottom" and room["y"] + room["h"] != max_y:
+        return None
+    if side == "left" and room["x"] != 0:
+        return None
+    if side == "right" and room["x"] + room["w"] != max_x:
+        return None
+
+    if side in ("top", "bottom"):
+        y = room["y"] if side == "top" else (room["y"] + room["h"])
+        center = room["x"] + room["w"] / 2
+        x1 = center - door_size / 2
+        x2 = center + door_size / 2
+        # clamp inside room span
+        x1 = max(room["x"], x1)
+        x2 = min(room["x"] + room["w"], x2)
+        return ("h", y, x1, x2)
+
+    if side in ("left", "right"):
+        x = room["x"] if side == "left" else (room["x"] + room["w"])
+        center = room["y"] + room["h"] / 2
+        y1 = center - door_size / 2
+        y2 = center + door_size / 2
+        y1 = max(room["y"], y1)
+        y2 = min(room["y"] + room["h"], y2)
+        return ("v", x, y1, y2)
+
+    return None
 
 def room_edges(room):
     """Return the 4 edges of a room in ROOM UNITS."""
@@ -396,14 +463,10 @@ def draw_blueprint(rooms, filename):
     # Exterior entrance
     entry = entrance_room(rooms)
     side = pick_entrance_side(entry, max_x, max_y)
+
     if side:
-        draw_exterior_door(
-            dwg,
-            entry["x"] * scale + margin,
-            entry["y"] * scale + margin,
-            entry["w"] * scale,
-            entry["h"] * scale,
-            side
-        )
+        opening = exterior_door_opening(entry, side, max_x, max_y)
+        if opening:
+            openings.append(o)
 
     dwg.save()
